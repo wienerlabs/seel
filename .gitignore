@@ -1,0 +1,43 @@
+# Environment
+.env
+*.env
+.env.*
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+target/
+**/dist/
+
+# Barretenberg CRS cache
+.bb-crs/
+
+# Solana
+*.so
+*.so.bak
+
+# Noir
+circuits/*/target/
+
+# SP1 circuit build artifacts
+circuits/income_proof_sp1/target/
+
+# Keys
+*.json.bak
+devnet-keypair.json
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
