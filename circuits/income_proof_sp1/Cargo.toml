@@ -1,0 +1,13 @@
+[workspace]
+
+[package]
+name = "income-proof-sp1"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "income-proof-sp1"
+path = "src/main.rs"
+
+[dependencies]
+sp1-zkvm = "6.1.0"
