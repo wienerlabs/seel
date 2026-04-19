@@ -1,0 +1,28 @@
+[package]
+name = "seel"
+version = "0.1.0"
+description = "SEEL — ZK income attestation on Solana"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "seel"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build"]
+# Build with --features verify-skip to bypass ZK verification in local tests.
+# NEVER enable this feature in a production deployment.
+verify-skip = []
+
+[dependencies]
+anchor-lang = { version = "0.30.1", features = ["init-if-needed"] }
+anchor-spl = { version = "0.30.1", features = ["token_2022", "associated_token"] }
+solana-program = "1.18"
+# SP1 Groth16 on-chain verifier — uses Solana's native BN254 precompile syscalls.
+# default-features = false strips std/heavy deps that cannot compile for SBF.
+sp1-verifier = { version = "6.1.0", default-features = false }
