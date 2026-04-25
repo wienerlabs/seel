@@ -1,7 +1,0 @@
-[package]
-name = "income_proof"
-type = "bin"
-authors = ["SEEL"]
-compiler_version = ">=0.36.0"
-
-[dependencies]
