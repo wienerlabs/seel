@@ -1,21 +1,9 @@
 [workspace]
 members = ["programs/seel"]
 resolver = "2"
-# sp1-verifier 6.1.0 declares rust-version = "1.91" but the SBF toolchain
-# ships rustc 1.89. The code compiles fine — this flag skips the version gate.
-ignore-rust-version = true
 
 [patch.crates-io]
 anchor-syn = { path = "vendor/anchor-syn" }
-# sp1-verifier 6.1.0 declares rust-version = "1.91" but Solana's BPF toolchain
-# ships rustc 1.89. The code itself compiles fine — we vendor it with the
-# rust-version constraint removed.
-sp1-verifier          = { path = "vendor/sp1-verifier" }
-sp1-derive            = { path = "vendor/sp1-derive-6.1.0" }
-sp1-hypercube         = { path = "vendor/sp1-hypercube-6.1.0" }
-sp1-primitives        = { path = "vendor/sp1-primitives-6.1.0" }
-sp1-recursion-executor = { path = "vendor/sp1-recursion-executor-6.1.0" }
-sp1-recursion-machine = { path = "vendor/sp1-recursion-machine-6.1.0" }
 
 [profile.release]
 overflow-checks = true

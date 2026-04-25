@@ -1,17 +1,15 @@
 # SEEL
 
-**Prove your real-world income on Solana. Borrow more without revealing it.**
-
-SEEL is a Solana-based DeFi protocol that lets users anonymously prove their traditional finance income using client-side Zero-Knowledge Proofs. A verified proof mints a Soulbound attestation token on-chain, which lending protocols accept to offer higher LTV ratios (65% to 80%).
+**Privacy-preserving income attestation on Solana — prove your real-world income with client-side ZK proofs and unlock higher LTV borrowing on DeFi, without revealing any financial data.**
 
 ---
 
 ## How It Works
 
 1. User connects to Plaid via OAuth — income data stays in the browser
-2. A Noir ZK circuit runs locally and answers: *"Is my 6-month average income above the threshold?"*
+2. A Circom Groth16 ZK circuit runs locally and answers: *"Is my 6-month average income above the threshold?"*
 3. The proof (no names, no exact figures, no employer) is sent to the backend for verification
-4. User pays a $3–8 USDC attestation fee via x402
+4. User pays a small USDC attestation fee via x402
 5. A Soulbound SPL Token-2022 is minted on Solana — valid for 30 days, non-transferable
 6. Lending protocols (Kamino, Save) read the token and unlock a higher LTV
 
@@ -23,17 +21,18 @@ Raw income data never leaves the client.
 
 ```
 Browser
-  ├── OAuth (Plaid / Argyle / Stripe)   income data stays client-side
-  └── Noir circuit (WASM)               generates ZK proof locally
+  ├── OAuth (Plaid)                income data stays client-side
+  └── Circom Groth16 (snarkjs)     ZK proof generated locally
 
-Backend (Node.js + TypeScript)
+Backend (Node.js + TypeScript, port 3001)
   ├── /auth      OAuth callback, session token
-  ├── /payment   x402 USDC fee ($3-8)
-  ├── /proof     Barretenberg proof verification
+  ├── /income    Plaid income data (never forwarded to logs)
+  ├── /proof     snarkjs Groth16 proof verification
+  ├── /payment   x402 USDC attestation fee
   └── /solana    Anchor program interaction, token minting
 
-Solana
-  ├── Anchor Program   verify proof, mint/expire/revoke attestation
+Solana (devnet)
+  ├── Anchor Program   verify Groth16 proof (BN254), mint/expire/revoke attestation
   └── SPL Token-2022   Soulbound (NonTransferable) attestation token
 ```
 
@@ -41,10 +40,10 @@ Solana
 
 ## Income Tiers
 
-| Tier | Monthly Average | LTV |
-|------|----------------|-----|
-| 1    | >= $2,000       | 75% |
-| 2    | >= $5,000       | 80% |
+| Tier | Monthly Average (6-month floor) | LTV |
+|------|--------------------------------|-----|
+| 1    | >= $2,000                       | 75% |
+| 2    | >= $5,000                       | 80% |
 
 The circuit checks all 6 months have positive income and computes the floor average. The threshold is a private input — the verifier only sees the resulting tier.
 
@@ -54,14 +53,14 @@ The circuit checks all 6 months have positive income and computes the floor aver
 
 | Layer | Technology |
 |-------|-----------|
-| ZK Circuit | Noir 0.36 + Barretenberg (UltraPlonk) |
+| ZK Circuit | Circom 2.0 + snarkJS (Groth16, BN254) |
 | Solana Program | Rust, Anchor 0.30, SPL Token-2022 |
 | Backend | Node.js 18+, TypeScript, Express |
 | Frontend | Next.js 14, Tailwind CSS |
 | Wallet | Solana Wallet Adapter (Phantom, Solflare) |
-| Income APIs | Plaid, Argyle, Stripe |
+| Income APIs | Plaid |
 | Payment | x402 (USDC micropayment) |
-| DeFi | Kamino SDK, Save SDK |
+| DeFi | Kamino SDK |
 
 ---
 
@@ -70,8 +69,7 @@ The circuit checks all 6 months have positive income and computes the floor aver
 ```
 seel/
 ├── circuits/
-│   ├── income_proof/          Noir circuit (threshold check)
-│   └── income_proof_sp1/      SP1 circuit (Groth16, on-chain verification)
+│   └── income_proof_circom/   Circom circuit + trusted setup artifacts
 ├── programs/seel/             Anchor program (Rust)
 ├── backend/                   Node.js API
 ├── frontend/                  Next.js app
@@ -87,7 +85,7 @@ seel/
 - Node.js 18+
 - Rust + Anchor CLI 0.30
 - Solana CLI (devnet)
-- Nargo CLI 0.36 (for Noir circuit)
+- circom + snarkJS (for circuit setup)
 
 ### Backend
 
@@ -102,7 +100,6 @@ npm run dev
 
 ```bash
 cd frontend
-cp .env.example .env.local
 npm install
 npm run dev
 ```
@@ -110,11 +107,20 @@ npm run dev
 ### Anchor Program
 
 ```bash
-anchor build --features verify-skip   # local testing only
+anchor build                              # production build
+anchor build --features verify-skip      # local testing only — never deploy
 anchor deploy --provider.cluster devnet
 ```
 
 > Never build for production with `--features verify-skip`.
+
+### Circom Circuit
+
+```bash
+cd circuits/income_proof_circom
+npm run setup   # compile, trusted setup, export verification key
+# artifacts land in frontend/public/circuits/ automatically
+```
 
 ---
 
@@ -132,25 +138,16 @@ Copy `backend/.env.example` to `backend/.env` and fill in:
 | `SEEL_PROGRAM_ID` | Deployed Anchor program address |
 | `USDC_MINT` | USDC mint address (devnet or mainnet) |
 | `BACKEND_KEYPAIR_PATH` | Path to Solana keypair file |
-| `NETWORK_PRIVATE_KEY` | SP1 prover network key |
+| `BACKEND_WALLET_ADDRESS` | Solana address to receive attestation fees |
 
 ---
 
-## Program ID (Devnet)
+## Deployed Addresses (Devnet)
 
-```
-DwiHe1VWW9KXeWXJFaRFoMNzPt3mVs2Ac84gPbaeBkoJ
-```
-
----
-
-## Revenue Model
-
-| Source | Detail |
-|--------|--------|
-| Attestation Fee | $3–8 USDC per proof, monthly |
-| Protocol License | Annual or per-transaction fee from lending protocols |
-| Premium Tier | Higher thresholds, longer validity, enterprise use |
+| Resource | Value |
+|----------|-------|
+| Program ID | `DwiHe1VWW9KXeWXJFaRFoMNzPt3mVs2Ac84gPbaeBkoJ` |
+| USDC Mint | `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` |
 
 ---
 
@@ -158,5 +155,5 @@ DwiHe1VWW9KXeWXJFaRFoMNzPt3mVs2Ac84gPbaeBkoJ
 
 - Income figures are private circuit inputs — they never leave the browser
 - The server receives a proof and public outputs only (tier: 1 or 2)
-- API responses are never logged on the server
+- API responses containing income data are never logged on the server
 - The on-chain token stores only tier, timestamps, and a proof hash
