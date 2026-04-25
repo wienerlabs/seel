@@ -26,8 +26,10 @@ const plaid = new PlaidApi(
 const router = Router();
 
 // GET /auth/plaid/link-token
-// Returns a short-lived Link token so the frontend can open Plaid Link.
-router.get("/plaid/link-token", async (req: Request, res: Response) => {
+// Creates a Link token for Plaid Link. Uses Transactions product only —
+// income is computed client-side from raw transactions (no income_verification
+// product required, which avoids sandbox userCreate/user_token complexity).
+router.get("/plaid/link-token", async (_req: Request, res: Response) => {
   try {
     const { data } = await plaid.linkTokenCreate({
       user: { client_user_id: `seel_${Date.now()}` },
@@ -36,8 +38,10 @@ router.get("/plaid/link-token", async (req: Request, res: Response) => {
       country_codes: [CountryCode.Us],
       language: "en",
     });
+
     res.json({ link_token: data.link_token });
-  } catch {
+  } catch (err: any) {
+    console.error("[Plaid] link-token error:", err?.response?.data ?? err?.message ?? err);
     res.status(500).json({ error: "Failed to create Plaid link token" });
   }
 });

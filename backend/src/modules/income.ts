@@ -17,19 +17,46 @@ const plaid = new PlaidApi(
   })
 );
 
-// Demo income: ~$5 000/month → Tier 2 qualifier
-const DEMO_INCOME = [4850, 5120, 4980, 5300, 5050, 5200];
-
 const router = Router();
 
-// POST /income/mock
-// Returns demo monthly_amounts — no Plaid account required.
-// Disabled in production to prevent fake attestations.
-router.post("/mock", (_req: Request, res: Response) => {
-  if (process.env.NODE_ENV === "production") {
-    return res.status(403).json({ error: "Demo mode is not available in production" });
+// POST /income/plaid-bank-income
+// Fetches structured bank income via Plaid's income_verification product.
+// Requires a user_token created during the Link session (via /auth/plaid/link-token).
+// In sandbox, Plaid returns realistic test income data (>$2 000/mo).
+router.post("/plaid-bank-income", async (req: Request, res: Response) => {
+  const { user_token } = req.body as { user_token?: string };
+  if (!user_token) {
+    return res.status(400).json({ error: "user_token required" });
   }
-  res.json({ success: true, monthly_amounts: DEMO_INCOME });
+
+  try {
+    const { data } = await plaid.creditBankIncomeGet({ user_token });
+
+    if (!data.bank_income?.length) {
+      return res.status(404).json({ error: "No income data — ensure the Link session included income_verification" });
+    }
+
+    // Aggregate monthly income across all bank income reports → items → sources.
+    const now = new Date();
+    const monthly = new Array(6).fill(0);
+
+    for (const report of data.bank_income) {
+      for (const item of report.items ?? []) {
+        for (const source of item.bank_income_sources ?? []) {
+          for (const hs of source.historical_summary ?? []) {
+            if (!hs.start_date) continue;
+            const d = new Date(hs.start_date);
+            const m = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
+            if (m >= 0 && m < 6) monthly[5 - m] += hs.total_amount ?? 0;
+          }
+        }
+      }
+    }
+
+    res.json({ monthly_amounts: monthly.map(Math.round), source: "plaid-bank-income" });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch bank income" });
+  }
 });
 
 // POST /income/plaid-transactions

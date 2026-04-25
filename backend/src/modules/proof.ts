@@ -1,63 +1,65 @@
 /// <reference path="../session.d.ts" />
+/// <reference path="../snarkjs.d.ts" />
 import { Router, Request, Response } from "express";
 import path from "path";
 import fs from "fs";
-import { BarretenbergBackend } from "@noir-lang/backend_barretenberg";
+import { groth16 } from "snarkjs";
 
-const CIRCUIT_PATH = path.resolve(
+const VK_PATH = path.resolve(
   __dirname,
-  "../../../frontend/public/circuits/income_proof.json"
+  "../../../circuits/income_proof_circom/verification_key.json"
 );
 
-// Cache the backend instance — initialising Barretenberg WASM is expensive.
-let _backend: BarretenbergBackend | null = null;
-async function getBackend(): Promise<BarretenbergBackend> {
-  if (!_backend) {
-    const circuit = JSON.parse(fs.readFileSync(CIRCUIT_PATH, "utf-8"));
-    _backend = new BarretenbergBackend(circuit, { threads: 1 });
+let _vk: object | null = null;
+function getVk(): object {
+  if (!_vk) {
+    if (!fs.existsSync(VK_PATH)) {
+      throw new Error(
+        "verification_key.json not found — run: cd circuits/income_proof_circom && npm run setup"
+      );
+    }
+    _vk = JSON.parse(fs.readFileSync(VK_PATH, "utf-8"));
   }
-  return _backend;
+  return _vk!;
 }
 
 const router = Router();
 
 // POST /proof/verify
-// Receives a Noir UltraPlonk proof generated in the browser, verifies it with
-// Barretenberg on the server, and stores the verified tier in the session for
-// /solana/mint.
+// Receives a snarkjs Groth16 proof generated in the browser, verifies it with
+// snarkjs on the server, and stores the verified tier + proof in the session
+// for /solana/mint.
 //
-// Body: { proof: string (base64), publicInputs: string[] (hex field elements) }
-// Income figures never reach the server — only the proof and public outputs do.
+// Body: { proof: object (snarkjs proof), publicSignals: string[] }
+// Income figures never reach the server — only the proof and public output do.
 router.post("/verify", async (req: Request, res: Response) => {
-  const { proof, publicInputs } = req.body as {
-    proof: string;
-    publicInputs: string[];
+  const { proof, publicSignals } = req.body as {
+    proof: object;
+    publicSignals: string[];
   };
 
-  if (typeof proof !== "string" || !Array.isArray(publicInputs)) {
-    return res.status(400).json({ error: "proof (base64) and publicInputs (string[]) are required" });
+  if (!proof || !publicSignals || !Array.isArray(publicSignals)) {
+    return res.status(400).json({ error: "proof (object) and publicSignals (string[]) are required" });
   }
 
   try {
-    const backend = await getBackend();
-
-    const isValid = await backend.verifyProof({
-      proof: Buffer.from(proof, "base64"),
-      publicInputs,
-    });
+    const vk = getVk();
+    const isValid = await groth16.verify(vk, publicSignals, proof);
 
     if (!isValid) {
       return res.status(400).json({ error: "Invalid proof" });
     }
 
-    // The circuit has a single public return value: tier (u8).
-    // Noir encodes it as a 32-byte field element, e.g. "0x0000...0001" or "0x0000...0002".
-    const tier = parseInt(publicInputs[0], 16);
+    // snarkjs encodes public signals as decimal strings, e.g. "1" or "2"
+    const tier = Number(publicSignals[0]);
     if (tier !== 1 && tier !== 2) {
       return res.status(400).json({ error: "Proof does not meet minimum income tier" });
     }
 
     req.session.verifiedTier = tier;
+    req.session.groth16Proof = JSON.stringify(proof);
+    req.session.groth16PublicSignals = JSON.stringify(publicSignals);
+
     res.json({ valid: true, tier });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

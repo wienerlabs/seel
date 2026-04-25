@@ -44,8 +44,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Fix 7: rate limiting
-// /proof/generate invokes the SP1 prover (expensive); cap tightly per IP
+// /proof/verify runs snarkjs Groth16 verification; cap tightly per IP
 const proofLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,

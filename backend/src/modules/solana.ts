@@ -68,19 +68,53 @@ function getProgram(): Program {
   return new Program(idl, provider);
 }
 
+/** Converts a snarkjs decimal-string coordinate to a 32-byte big-endian buffer. */
+function fieldElemToBytes32(dec: string): Buffer {
+  const hex = BigInt(dec).toString(16).padStart(64, "0");
+  return Buffer.from(hex, "hex");
+}
+
+/**
+ * Serialises a snarkjs Groth16 proof object into 256 bytes for the Anchor program.
+ *
+ * Layout:
+ *   [  0.. 64)  pi_a  — G1: x[32] || y[32]  (big-endian BN254 field elements)
+ *   [ 64..192)  pi_b  — G2: x_im[32] || x_re[32] || y_im[32] || y_re[32]
+ *   [192..256)  pi_c  — G1: x[32] || y[32]
+ */
+function groth16ProofToBytes(proof: any): Buffer {
+  const buf = Buffer.alloc(256);
+  // pi_a (G1)
+  fieldElemToBytes32(proof.pi_a[0]).copy(buf, 0);
+  fieldElemToBytes32(proof.pi_a[1]).copy(buf, 32);
+  // pi_b (G2): snarkjs stores Fp2 as [c0, c1] = [Re, Im] for both x and y.
+  // EIP-197 / Solana precompile expects [Im, Re] for each Fp2 pair:
+  //   [x_im, x_re, y_im, y_re] = [pi_b[0][1], pi_b[0][0], pi_b[1][1], pi_b[1][0]]
+  // Both x AND y need swapping (c1/Im first, c0/Re second).
+  fieldElemToBytes32(proof.pi_b[0][1]).copy(buf, 64);   // x_im = c1 (EIP-197 first)
+  fieldElemToBytes32(proof.pi_b[0][0]).copy(buf, 96);   // x_re = c0 (EIP-197 second)
+  fieldElemToBytes32(proof.pi_b[1][1]).copy(buf, 128);  // y_im = c1 (EIP-197 first)
+  fieldElemToBytes32(proof.pi_b[1][0]).copy(buf, 160);  // y_re = c0 (EIP-197 second)
+  // pi_c (G1)
+  fieldElemToBytes32(proof.pi_c[0]).copy(buf, 192);
+  fieldElemToBytes32(proof.pi_c[1]).copy(buf, 224);
+  return buf;
+}
+
 /**
  * Mints (or renews) an attestation token for `userPubkey`.
  *
- * Noir proof is verified by the backend (Barretenberg); the Anchor program is
- * built with --features verify-skip so it accepts any proof bytes and reads
- * the tier directly from public_values[0].
+ * The Groth16 proof (stored in session by /proof/verify) is serialised to
+ * 256 bytes and passed to the Anchor program for on-chain BN254 verification.
  */
 export async function mintAttestationToken(
   userPubkey: string,
   tier: number,
+  groth16ProofJson: string,
 ): Promise<string> {
-  const proofBytes = Buffer.alloc(32);           // dummy — verify-skip ignores it
-  const publicValuesBytes = Buffer.from([tier]); // tier byte read by Anchor program
+  const rawProof = JSON.parse(groth16ProofJson);
+  const proofBytes = groth16ProofToBytes(rawProof);
+  const publicValuesBytes = Buffer.from([tier]);
   const program = getProgram();
   const user = new PublicKey(userPubkey);
 
@@ -105,8 +139,8 @@ export async function mintAttestationToken(
 
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
   const tx = new Transaction({ recentBlockhash: blockhash, feePayer: authorityKp.publicKey });
-  // Mint + ATA creation CPIs need ~600K CU.
-  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 600_000 }));
+  // Groth16 BN254 precompile: ~100K CU. ATA creation CPIs add headroom.
+  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 1_200_000 }));
   tx.add(ix);
   tx.sign(authorityKp);
 
@@ -247,6 +281,11 @@ router.post("/mint", async (req: Request, res: Response) => {
     return res.status(403).json({ error: "No verified proof in session — call /proof/verify first" });
   }
 
+  const groth16ProofJson = req.session.groth16Proof;
+  if (!groth16ProofJson) {
+    return res.status(403).json({ error: "No proof bytes in session — call /proof/verify first" });
+  }
+
   const { userPubkey } = req.body as { userPubkey?: string };
 
   if (!userPubkey) {
@@ -254,10 +293,12 @@ router.post("/mint", async (req: Request, res: Response) => {
   }
 
   try {
-    const signature = await mintAttestationToken(userPubkey, tier);
+    const signature = await mintAttestationToken(userPubkey, tier, groth16ProofJson);
     // Consume one-use session flags
     req.session.isPaymentConfirmed = false;
     req.session.verifiedTier = undefined;
+    req.session.groth16Proof = undefined;
+    req.session.groth16PublicSignals = undefined;
     res.json({ success: true, signature });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
