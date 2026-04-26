@@ -4,7 +4,7 @@ import { verify, settle } from "x402/verify";
 import { processPriceToAtomicAmount } from "x402/shared";
 
 const NETWORK = "solana-devnet" as const;
-const PRICE = "$0.01";
+const PRICE = "$3.00";
 const X402_VERSION = 1;
 // Coinbase x402 facilitator fee-payer on Solana devnet
 const FEE_PAYER = "CKPKJWNdJEqa81x7CkZ14BVPiY6y16Sxs7owznqtWYp5";
