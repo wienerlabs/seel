@@ -83,10 +83,11 @@ export async function getRecommendedLtv(
   const now = Math.floor(Date.now() / 1000);
   if (att.expiresAt <= now) return 65;
 
-  if (att.tier === 2) return 80;
-  if (att.tier === 1) return 75;
+  if (att.tier === 2) return 85;
+  if (att.tier === 1) return 80;
   return 65;
 }
 
 export * from "./kamino";
+export * from "./save";
 export * from "./types";

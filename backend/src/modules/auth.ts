@@ -64,4 +64,62 @@ router.post("/plaid/callback", async (req: Request, res: Response) => {
   }
 });
 
+// GET /auth/argyle/user-token
+// Creates an Argyle user token used to initialise Argyle Link in the browser.
+router.get("/argyle/user-token", async (_req: Request, res: Response) => {
+  const auth = Buffer.from(
+    `${process.env.ARGYLE_CLIENT_ID}:${process.env.ARGYLE_CLIENT_SECRET}`
+  ).toString("base64");
+  try {
+    const r = await fetch("https://api.argyle.com/v2/user-tokens", {
+      method: "POST",
+      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    if (!r.ok) throw new Error(`Argyle ${r.status}`);
+    const data = await r.json() as { user_token?: string };
+    res.json({ user_token: data.user_token });
+  } catch (err: any) {
+    console.error("[Argyle] user-token:", err?.message);
+    res.status(500).json({ error: "Failed to create Argyle user token" });
+  }
+});
+
+// GET /auth/stripe/connect-url
+// Returns the Stripe Connect OAuth URL for the user to authorise read-only access.
+router.get("/stripe/connect-url", (_req: Request, res: Response) => {
+  const clientId = process.env.STRIPE_CLIENT_ID;
+  if (!clientId) return res.status(500).json({ error: "Stripe not configured" });
+  const redirectUri = `${process.env.FRONTEND_URL}/auth/stripe/callback`;
+  const url = new URL("https://connect.stripe.com/oauth/authorize");
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("client_id", clientId);
+  url.searchParams.set("scope", "read_only");
+  url.searchParams.set("redirect_uri", redirectUri);
+  res.json({ url: url.toString() });
+});
+
+// POST /auth/stripe/callback
+// Exchanges the Stripe authorisation code for a connected-account access_token.
+router.post("/stripe/callback", async (req: Request, res: Response) => {
+  const { code } = req.body as { code?: string };
+  if (!code) return res.status(400).json({ error: "code required" });
+  try {
+    const r = await fetch("https://connect.stripe.com/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code,
+        client_secret: process.env.STRIPE_SECRET_KEY!,
+      }).toString(),
+    });
+    if (!r.ok) throw new Error(`Stripe ${r.status}`);
+    const data = await r.json() as { access_token?: string };
+    res.json({ access_token: data.access_token });
+  } catch {
+    res.status(500).json({ error: "Stripe token exchange failed" });
+  }
+});
+
 export default router;

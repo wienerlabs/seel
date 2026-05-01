@@ -14,14 +14,14 @@ export interface AccessCreds {
 const DEMO_SCENARIOS = [
   {
     label: "$5,000 / mo",
-    sublabel: "Tier 2 — 80% LTV",
+    sublabel: "Tier 2 — 85% LTV",
     amounts: [5000, 5000, 5000, 5000, 5000, 5000],
     tier: "TIER 2",
     tierColor: "#4ade80",
   },
   {
     label: "$2,000 / mo",
-    sublabel: "Tier 1 — 75% LTV",
+    sublabel: "Tier 1 — 80% LTV",
     amounts: [2000, 2000, 2000, 2000, 2000, 2000],
     tier: "TIER 1",
     tierColor: "#facc15",
@@ -117,7 +117,7 @@ export default function OAuthConnect({ onConnected }: Props) {
         Connect your bank account to verify income.
         <br />
         <span className="text-gray-500 text-xs">
-          Your data never leaves your browser.
+          Income computation and ZK proof generation happen in your browser. Raw financial data transits our backend as a read-only proxy and is never stored.
         </span>
       </p>
 

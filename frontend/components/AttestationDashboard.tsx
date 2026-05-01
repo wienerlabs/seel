@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 
 export interface AttestationResult {
@@ -45,11 +45,12 @@ const PROTOCOLS = [
 
 export default function AttestationDashboard({ result, borrowAmount = 0 }: Props) {
   const { publicKey } = useWallet();
-  const expiresAt = result
-    ? new Date(result.issuedAt.getTime() + 30 * 24 * 60 * 60 * 1000)
-    : null;
+  const expiresAt = useMemo(
+    () => result ? new Date(result.issuedAt.getTime() + 30 * 24 * 60 * 60 * 1000) : null,
+    [result],
+  );
   const countdown = useCountdown(expiresAt);
-  const ltv = result ? (result.tier === 2 ? 80 : 75) : 65;
+  const ltv = result ? (result.tier === 2 ? 85 : 80) : 65;
   const saving =
     borrowAmount > 0 && result
       ? calcCollateral(borrowAmount, 65) - calcCollateral(borrowAmount, ltv)
@@ -140,12 +141,12 @@ export default function AttestationDashboard({ result, borrowAmount = 0 }: Props
             {!result && (
               <>
                 <div className="ad-sav-row ad-sav-row--mid">
-                  <span>TIER 1 <span className="ad-sav-ltv">75%</span></span>
-                  <span>${calcCollateral(borrowAmount, 75).toLocaleString()}</span>
+                  <span>TIER 1 <span className="ad-sav-ltv">80%</span></span>
+                  <span>${calcCollateral(borrowAmount, 80).toLocaleString()}</span>
                 </div>
                 <div className="ad-sav-row ad-sav-row--good">
-                  <span>TIER 2 <span className="ad-sav-ltv">80%</span></span>
-                  <span>${calcCollateral(borrowAmount, 80).toLocaleString()}</span>
+                  <span>TIER 2 <span className="ad-sav-ltv">85%</span></span>
+                  <span>${calcCollateral(borrowAmount, 85).toLocaleString()}</span>
                 </div>
               </>
             )}
@@ -167,7 +168,7 @@ export default function AttestationDashboard({ result, borrowAmount = 0 }: Props
             <div className="ad-sav-banner ad-sav-banner--dim">
               SAVE UP TO{' '}
               <strong>
-                ${(calcCollateral(borrowAmount, 65) - calcCollateral(borrowAmount, 80)).toLocaleString()}
+                ${(calcCollateral(borrowAmount, 65) - calcCollateral(borrowAmount, 85)).toLocaleString()}
               </strong>{' '}
               WITH TIER 2
             </div>
@@ -207,7 +208,7 @@ export default function AttestationDashboard({ result, borrowAmount = 0 }: Props
           <span className="ad-stat-label">Time to Attest</span>
         </div>
         <div className="ad-stat">
-          <span className="ad-stat-val" style={{ color: 'var(--gold)' }}>1–3s</span>
+          <span className="ad-stat-val" style={{ color: 'var(--gold)' }}>~10s</span>
           <span className="ad-stat-label">Proof Gen</span>
         </div>
         <div className="ad-stat">

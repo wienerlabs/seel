@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import {
   ComputeBudgetProgram,
@@ -41,8 +41,6 @@ interface Props {
 // ---------------------------------------------------------------------------
 
 interface PlaidTx { amount: number; date: string; name: string }
-interface ArgylePaystub { net_pay: string; pay_date: string }
-interface StripePayout { amount: number; arrival_date: number }
 
 function computeMonthlyFromPlaid(transactions: PlaidTx[]): number[] {
   const now = new Date();
@@ -54,32 +52,6 @@ function computeMonthlyFromPlaid(transactions: PlaidTx[]): number[] {
       (now.getFullYear() - d.getFullYear()) * 12 +
       (now.getMonth() - d.getMonth());
     if (m >= 0 && m < 6) monthly[5 - m] += Math.abs(tx.amount);
-  }
-  return monthly.map((v) => Math.round(v));
-}
-
-function computeMonthlyFromArgyle(paystubs: ArgylePaystub[]): number[] {
-  const now = new Date();
-  const monthly = new Array(6).fill(0);
-  for (const ps of paystubs) {
-    const d = new Date(ps.pay_date);
-    const m =
-      (now.getFullYear() - d.getFullYear()) * 12 +
-      (now.getMonth() - d.getMonth());
-    if (m >= 0 && m < 6) monthly[5 - m] += parseFloat(ps.net_pay);
-  }
-  return monthly.map((v) => Math.round(v));
-}
-
-function computeMonthlyFromStripe(payouts: StripePayout[]): number[] {
-  const now = new Date();
-  const monthly = new Array(6).fill(0);
-  for (const p of payouts) {
-    const d = new Date(p.arrival_date * 1000);
-    const m =
-      (now.getFullYear() - d.getFullYear()) * 12 +
-      (now.getMonth() - d.getMonth());
-    if (m >= 0 && m < 6) monthly[5 - m] += p.amount / 100; // cents → dollars
   }
   return monthly.map((v) => Math.round(v));
 }
@@ -102,30 +74,6 @@ async function fetchIncomeClientSide(creds: AccessCreds): Promise<number[]> {
     const credits = transactions.filter((t) => t.amount < 0);
     console.log(`[SEEL] Plaid: ${transactions.length} total tx, ${credits.length} credits (income)`);
     return computeMonthlyFromPlaid(transactions);
-  }
-
-  if (creds.provider === "argyle") {
-    const res = await fetch(`${BACKEND}/income/argyle-paystubs`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ account_id: creds.token }),
-    });
-    if (!res.ok) throw new Error("Failed to fetch Argyle paystubs");
-    const { paystubs } = (await res.json()) as { paystubs: ArgylePaystub[] };
-    return computeMonthlyFromArgyle(paystubs);
-  }
-
-  if (creds.provider === "stripe") {
-    const res = await fetch(`${BACKEND}/income/stripe-charges`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ access_token: creds.token }),
-    });
-    if (!res.ok) throw new Error("Failed to fetch Stripe payouts");
-    const { payouts } = (await res.json()) as { payouts: StripePayout[] };
-    return computeMonthlyFromStripe(payouts);
   }
 
   throw new Error(`Unknown provider: ${creds.provider}`);
@@ -167,6 +115,14 @@ export default function ProofGenerator({ onProofReady, accessCreds }: Props) {
   const [errorMsg, setErrorMsg] = useState("");
   const [incomeTooLow, setIncomeTooLow] = useState(false);
   const [monthlyDebug, setMonthlyDebug] = useState<number[] | null>(null);
+  const [feeLabel, setFeeLabel] = useState("$3");
+
+  // Eagerly load snarkjs and circuit files so they're browser-cached before the user clicks.
+  useEffect(() => {
+    import("snarkjs").catch(() => {});
+    fetch("/circuits/income_proof.wasm").catch(() => {});
+    fetch("/circuits/income_proof_final.zkey").catch(() => {});
+  }, []);
 
   async function run() {
     if (!publicKey) return;
@@ -246,6 +202,10 @@ export default function ProofGenerator({ onProofReady, accessCreds }: Props) {
       const receiverPk = new PublicKey(requirements.payTo);
       const amount = BigInt(requirements.maxAmountRequired);
 
+      // Update fee label from server-reported amount (6 decimals → UI dollars).
+      const feeUsd = (Number(amount) / 1_000_000).toFixed(2).replace(/\.?0+$/, "");
+      setFeeLabel(`$${feeUsd}`);
+
       const fromAta = await getAssociatedTokenAddress(usdcMint, publicKey);
       const toAta = await getAssociatedTokenAddress(usdcMint, receiverPk);
 
@@ -258,7 +218,7 @@ export default function ProofGenerator({ onProofReady, accessCreds }: Props) {
       const usdcBalance = BigInt(balanceResp.value.amount);
       if (usdcBalance < amount) {
         throw new Error(
-          `Insufficient USDC: wallet has ${balanceResp.value.uiAmountString} USDC, need $3.`
+          `Insufficient USDC: wallet has ${balanceResp.value.uiAmountString} USDC, need ${feeLabel}.`
         );
       }
 
@@ -323,7 +283,7 @@ export default function ProofGenerator({ onProofReady, accessCreds }: Props) {
     fetching_income: "Fetching income data…",
     generating_proof: "Generating ZK proof in browser…",
     verifying_proof: "Verifying proof…",
-    signing_payment: "Sign $3 USDC payment in wallet…",
+    signing_payment: `Sign ${feeLabel} USDC payment in wallet…`,
     minting: "Minting attestation token…",
     done: "Done!",
     error: "Try again",
@@ -334,10 +294,9 @@ export default function ProofGenerator({ onProofReady, accessCreds }: Props) {
   return (
     <div className="flex flex-col items-center gap-5">
       <p className="text-gray-400 text-sm text-center">
-        Your income figures are used only to generate a ZK proof — they never leave your browser.
-        The proof is verified by the backend and the attestation is minted on Solana.
+        Income computation and ZK proof generation happen entirely in your browser. Raw financial data transits our backend as a read-only proxy and is never stored.
         <br />
-        A one-time $3 USDC fee covers the on-chain attestation.
+        A one-time {feeLabel} USDC fee covers the on-chain attestation.
       </p>
 
       <button
@@ -369,7 +328,7 @@ export default function ProofGenerator({ onProofReady, accessCreds }: Props) {
           </svg>
           {statusLabel[step]}
           {step === "generating_proof" && (
-            <span className="text-gray-600"> (~20s)</span>
+            <span className="text-gray-600"> (~10s)</span>
           )}
         </div>
       )}
@@ -389,7 +348,7 @@ export default function ProofGenerator({ onProofReady, accessCreds }: Props) {
               color: "#888",
             }}>
               <div style={{ marginBottom: 6, color: "#555", letterSpacing: "0.08em" }}>
-                PLAID — MONTHLY INCOME (last 6 months)
+                {accessCreds.provider.toUpperCase()} — MONTHLY INCOME (last 6 months)
               </div>
               {monthlyDebug.map((amt, i) => {
                 const d = new Date();

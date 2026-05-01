@@ -105,16 +105,16 @@ export default function LaunchWizard({ onComplete, onBorrowChange }: Props) {
                     <span className="lw-bc-val">${calcCollateral(borrowNum, 65).toLocaleString()} collateral</span>
                   </div>
                   <div className="lw-bc-row lw-bc-row--mid">
-                    <span className="lw-bc-label">TIER 1 ≥$2k/mo&nbsp;&nbsp;<span className="lw-bc-ltv">75% LTV</span></span>
-                    <span className="lw-bc-val">${calcCollateral(borrowNum, 75).toLocaleString()} collateral</span>
+                    <span className="lw-bc-label">TIER 1 ≥$2k/mo&nbsp;&nbsp;<span className="lw-bc-ltv">80% LTV</span></span>
+                    <span className="lw-bc-val">${calcCollateral(borrowNum, 80).toLocaleString()} collateral</span>
                   </div>
                   <div className="lw-bc-row lw-bc-row--good">
-                    <span className="lw-bc-label">TIER 2 ≥$5k/mo&nbsp;&nbsp;<span className="lw-bc-ltv">80% LTV</span></span>
-                    <span className="lw-bc-val">${calcCollateral(borrowNum, 80).toLocaleString()} collateral</span>
+                    <span className="lw-bc-label">TIER 2 ≥$5k/mo&nbsp;&nbsp;<span className="lw-bc-ltv">85% LTV</span></span>
+                    <span className="lw-bc-val">${calcCollateral(borrowNum, 85).toLocaleString()} collateral</span>
                   </div>
                   <div className="lw-bc-savings">
                     SAVE&nbsp;
-                    <strong>${(calcCollateral(borrowNum, 65) - calcCollateral(borrowNum, 80)).toLocaleString()}</strong>
+                    <strong>${(calcCollateral(borrowNum, 65) - calcCollateral(borrowNum, 85)).toLocaleString()}</strong>
                     &nbsp;in locked collateral with SEEL Tier 2
                   </div>
                 </div>
@@ -207,7 +207,7 @@ export default function LaunchWizard({ onComplete, onBorrowChange }: Props) {
                 <div className="lw-dm-row">
                   <span className="lw-dm-key">LTV UNLOCK</span>
                   <span className="lw-dm-val" style={{ color: 'var(--gold)' }}>
-                    {result.tier === 2 ? '80%' : '75%'}
+                    {result.tier === 2 ? '85%' : '80%'}
                   </span>
                 </div>
                 <div className="lw-dm-row">
